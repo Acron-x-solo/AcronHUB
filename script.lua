@@ -40,21 +40,28 @@ local function findClosestCoin()
     return closestCoin
 end
 local function startCoinFarm()
-    coinFarmConn = game:GetService("RunService").RenderStepped:Connect(function()
+    if coinFarmConn then coinFarmConn:Disconnect() coinFarmConn = nil end
+    coinFarmConn = game:GetService("RunService").Heartbeat:Connect(function()
         if not coinFarmEnabled then return end
         local player = game.Players.LocalPlayer
         local char = player.Character
         if not char or not char:FindFirstChild("HumanoidRootPart") then return end
         local rootPart = char.HumanoidRootPart
-        local closestCoin = findClosestCoin()
-        if tick() - lastTeleportTime < 0.15 then return end
-        if closestCoin and closestCoin.Parent then
-            local coinPos = closestCoin.Position
-            if not lastCoinPos or (coinPos - lastCoinPos).Magnitude > 2 then
-                rootPart.CFrame = CFrame.new(coinPos + Vector3.new(0, 1, 0))
-                lastCoinPos = coinPos
-                lastTeleportTime = tick()
+        local closestCoin, closestDistance = nil, math.huge
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            local name = obj.Name:lower()
+            if (name:find("coin") or name:find("money") or name:find("cash") or 
+                name:find("gold") or name:find("gem") or name:find("dollar")) and
+                obj:IsA("BasePart") and obj.Parent and obj.Parent.Name ~= "Character" then
+                local distance = (obj.Position - rootPart.Position).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestCoin = obj
+                end
             end
+        end
+        if closestCoin then
+            rootPart.CFrame = CFrame.new(closestCoin.Position + Vector3.new(0, 1, 0))
         end
     end)
 end
@@ -79,12 +86,11 @@ local espConn = nil
 local espObjects = {}
 local gunESP = nil
 local function clearESP()
-    for plr, obj in pairs(espObjects) do
-        if obj and obj.Parent then
-            obj:Destroy()
-        end
+    for _, obj in pairs(espObjects) do
+        if obj and obj.Parent then obj:Destroy() end
     end
     espObjects = {}
+    if gunESP and gunESP.Parent then gunESP:Destroy() gunESP = nil end
 end
 local function getRole(plr)
     local function hasTool(name)
@@ -118,28 +124,46 @@ local function createESP(plr, color)
     box.Parent = root
     espObjects[plr] = box
 end
+local function isPlayerCharacter(model)
+    return model and model:IsA("Model") and model:FindFirstChildOfClass("Humanoid")
+end
 local function updateESP()
     clearESP()
-    for _, plr in ipairs(game.Players:GetPlayers()) do
+    local players = game.Players:GetPlayers()
+    for _, plr in ipairs(players) do
         if plr ~= game.Players.LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local role = getRole(plr)
-            local color = getColorByRole(role)
-            createESP(plr, color)
+            local root = plr.Character.HumanoidRootPart
+            if not espObjects[plr] then
+                local box = Instance.new("BoxHandleAdornment")
+                box.Adornee = root
+                box.AlwaysOnTop = true
+                box.ZIndex = 10
+                box.Size = root.Size + Vector3.new(0.5,0.5,0.5)
+                box.Color3 = getColorByRole(getRole(plr))
+                box.Transparency = 0.5
+                box.Parent = root
+                espObjects[plr] = box
+            end
         end
     end
-    if gunESP and gunESP.Parent then gunESP:Destroy() gunESP = nil end
     for _, obj in ipairs(workspace:GetDescendants()) do
         local name = obj.Name:lower()
         if (name:find("gun") or name:find("revolver")) and obj:IsA("BasePart") then
-            gunESP = Instance.new("BoxHandleAdornment")
-            gunESP.Adornee = obj
-            gunESP.AlwaysOnTop = true
-            gunESP.ZIndex = 10
-            gunESP.Size = obj.Size + Vector3.new(0.5,0.5,0.5)
-            gunESP.Color3 = Color3.fromRGB(255, 140, 0)
-            gunESP.Transparency = 0.3
-            gunESP.Parent = obj
-            break
+            local parent = obj.Parent
+            if not isPlayerCharacter(parent) then
+                if not gunESP or gunESP.Adornee ~= obj then
+                    if gunESP and gunESP.Parent then gunESP:Destroy() end
+                    gunESP = Instance.new("BoxHandleAdornment")
+                    gunESP.Adornee = obj
+                    gunESP.AlwaysOnTop = true
+                    gunESP.ZIndex = 10
+                    gunESP.Size = obj.Size + Vector3.new(0.5,0.5,0.5)
+                    gunESP.Color3 = Color3.fromRGB(255, 140, 0)
+                    gunESP.Transparency = 0.3
+                    gunESP.Parent = obj
+                end
+                break
+            end
         end
     end
 end
@@ -147,7 +171,7 @@ local function setESP(state)
     if espConn then espConn:Disconnect() espConn = nil end
     clearESP()
     if state then
-        espConn = game:GetService("RunService").RenderStepped:Connect(function()
+        espConn = game:GetService("RunService").Heartbeat:Connect(function()
             updateESP()
         end)
     end
@@ -191,11 +215,15 @@ local function setAim(state)
     if aimConn then aimConn:Disconnect() aimConn = nil end
     if state then
         aimConn = game:GetService("RunService").RenderStepped:Connect(function()
-            if not hasGun() then return end
             local target = getClosestTarget()
             if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
                 local cam = workspace.CurrentCamera
                 cam.CFrame = CFrame.new(cam.CFrame.Position, target.Character.HumanoidRootPart.Position)
+                -- Для отладки:
+                print("Aimbot: навёлся на ", target.Name)
+            else
+                -- Для отладки:
+                print("Aimbot: нет цели")
             end
         end)
     end
@@ -427,7 +455,8 @@ local function findClosestCoin()
 end
 
 local function startCoinFarm()
-    coinFarmConn = game:GetService("RunService").RenderStepped:Connect(function()
+    if coinFarmConn then coinFarmConn:Disconnect() coinFarmConn = nil end
+    coinFarmConn = game:GetService("RunService").Heartbeat:Connect(function()
         if not coinFarmEnabled then return end
         
         local player = game.Players.LocalPlayer
@@ -535,7 +564,6 @@ end
 
 local function updateESP()
     clearESP()
-    -- ESP по игрокам
     for _, plr in ipairs(game.Players:GetPlayers()) do
         if plr ~= game.Players.LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
             local role = getRole(plr)
@@ -543,20 +571,22 @@ local function updateESP()
             createESP(plr, color)
         end
     end
-    -- ESP по выпавшему оружию
     if gunESP and gunESP.Parent then gunESP:Destroy() gunESP = nil end
     for _, obj in ipairs(workspace:GetDescendants()) do
         local name = obj.Name:lower()
         if (name:find("gun") or name:find("revolver")) and obj:IsA("BasePart") then
-            gunESP = Instance.new("BoxHandleAdornment")
-            gunESP.Adornee = obj
-            gunESP.AlwaysOnTop = true
-            gunESP.ZIndex = 10
-            gunESP.Size = obj.Size + Vector3.new(0.5,0.5,0.5)
-            gunESP.Color3 = Color3.fromRGB(255, 140, 0) -- оранжевый
-            gunESP.Transparency = 0.3
-            gunESP.Parent = obj
-            break
+            local parent = obj.Parent
+            if not isPlayerCharacter(parent) then
+                gunESP = Instance.new("BoxHandleAdornment")
+                gunESP.Adornee = obj
+                gunESP.AlwaysOnTop = true
+                gunESP.ZIndex = 10
+                gunESP.Size = obj.Size + Vector3.new(0.5,0.5,0.5)
+                gunESP.Color3 = Color3.fromRGB(255, 140, 0)
+                gunESP.Transparency = 0.3
+                gunESP.Parent = obj
+                break
+            end
         end
     end
 end
@@ -566,7 +596,7 @@ local function setESP(state)
     if espConn then espConn:Disconnect() espConn = nil end
     clearESP()
     if state then
-        espConn = game:GetService("RunService").RenderStepped:Connect(function()
+        espConn = game:GetService("RunService").Heartbeat:Connect(function()
             updateESP()
         end)
     end
@@ -613,11 +643,15 @@ local function setAim(state)
     if aimConn then aimConn:Disconnect() aimConn = nil end
     if state then
         aimConn = game:GetService("RunService").RenderStepped:Connect(function()
-            if not hasGun() then return end
             local target = getClosestTarget()
             if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
                 local cam = workspace.CurrentCamera
                 cam.CFrame = CFrame.new(cam.CFrame.Position, target.Character.HumanoidRootPart.Position)
+                -- Для отладки:
+                print("Aimbot: навёлся на ", target.Name)
+            else
+                -- Для отладки:
+                print("Aimbot: нет цели")
             end
         end)
     end
